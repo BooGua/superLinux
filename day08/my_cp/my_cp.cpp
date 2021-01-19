@@ -2,18 +2,25 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 
-int main()
+int main(int argc, char *argv[])
 {
-    std::cout << "Welcome to use MyCP tool." << std::endl;
+    if(argc != 3){
+        printf("Please use right format, like: my_cp a_file b_file.\n");
+        exit(1);
+    }
 
     char source_file[] = "source_file.txt";
     char target_file[] = "target_file.txt";
 
     // open 一个文件。
-    int source_fd = open(source_file, O_CREAT | O_RDWR);
-    int target_fd = open(target_file, O_CREAT | O_RDWR);
+    // int source_fd = open(source_file, O_CREAT | O_RDWR);
+    // int target_fd = open(target_file, O_CREAT | O_RDWR);
+    
+    int source_fd = open(argv[1],O_CREAT | O_RDWR);
+    int target_fd = open(argv[2], O_CREAT | O_RDWR);
     
     // 按行读取内容。
     char buff[10240];
