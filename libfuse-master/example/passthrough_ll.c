@@ -94,11 +94,14 @@ char *int2str(int number)
 
 struct lo_inode
 {
+	// *next 和 *prev 是用来做什么的？
 	struct lo_inode *next; /* protected by lo->mutex */
 	struct lo_inode *prev; /* protected by lo->mutex */
 	int fd;
 	ino_t ino;
 	dev_t dev;
+
+	// 这个值是用来干什么的？->似乎是引用次数。
 	uint64_t refcount; /* protected by lo->mutex */
 };
 
@@ -299,12 +302,21 @@ out_err:
 
 static struct lo_inode *lo_find(struct lo_data *lo, struct stat *st)
 {
+	// lo 是当前 fs 的基本属性。
+	// st 是当前文件的 stat 属性。
+
 	struct lo_inode *p;
 	struct lo_inode *ret = NULL;
 
+	append_write("/out_put_root_next.txt", "-------------> ");
+	append_write("/out_put_root_next.txt", int2str(lo->root.next->ino));
+	append_write("/out_put_root_next.txt", "\n");
+
 	pthread_mutex_lock(&lo->mutex);
+	int tmp = 0;
 	for (p = lo->root.next; p != &lo->root; p = p->next)
 	{
+		tmp++;
 		if (p->ino == st->st_ino && p->dev == st->st_dev)
 		{
 			assert(p->refcount > 0);
@@ -313,11 +325,16 @@ static struct lo_inode *lo_find(struct lo_data *lo, struct stat *st)
 			break;
 		}
 	}
+	append_write("/out_put_tmp_count.txt", int2str(tmp));
+	append_write("/out_put_tmp_count.txt", "\n");
+
 	pthread_mutex_unlock(&lo->mutex);
 	return ret;
 }
 
-static int lo_do_lookup(fuse_req_t req, fuse_ino_t parent, const char *name,
+static int lo_do_lookup(fuse_req_t req,
+						fuse_ino_t parent,
+						const char *name,
 						struct fuse_entry_param *e)
 {
 	int newfd;
@@ -330,15 +347,30 @@ static int lo_do_lookup(fuse_req_t req, fuse_ino_t parent, const char *name,
 	e->attr_timeout = lo->timeout;
 	e->entry_timeout = lo->timeout;
 
-	newfd = openat(lo_fd(req, parent), name, O_PATH | O_NOFOLLOW);
+	newfd = openat(lo_fd(req, parent), name, O_PATH | O_NOFOLLOW); // 返回父节点的 fd。
+	append_write("/out_put.txt", "=---+> ");
+	append_write("/out_put.txt", name);
+	append_write("/out_put.txt", " 的 lo_fd(req, parent) 是：");
+	append_write("/out_put.txt", int2str(newfd));
+	append_write("/out_put.txt", ", parent = ");
+	append_write("/out_put.txt", int2str(parent % 1000000000));
+	append_write("/out_put.txt", "\n");
+
 	if (newfd == -1)
 		goto out_err;
 
-	res = fstatat(newfd, "", &e->attr, AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW);
+	// 将查询到的文件属性赋值给 &e->attr。
+	res = fstatat(newfd, "", &e->attr, AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW); // 相对路径。"" 应该代表当前路径。
+	append_write("/out_put.txt", ">>>>>>>> 父目录的 st_ino: ");
+	append_write("/out_put.txt", int2str(&e->attr.st_ino));
+	append_write("/out_put.txt", ", ino=");
+
 	if (res == -1)
 		goto out_err;
 
-	inode = lo_find(lo_data(req), &e->attr);
+	// todo: 需要搞懂这句话在干啥，我们假定它获取了当前文件的 inode 数据结构。
+	inode = lo_find(lo_data(req), &e->attr); // 此时 inode->ino 还没有值。
+
 	if (inode)
 	{
 		close(newfd);
@@ -356,6 +388,9 @@ static int lo_do_lookup(fuse_req_t req, fuse_ino_t parent, const char *name,
 		inode->refcount = 1;
 		inode->fd = newfd;
 		inode->ino = e->attr.st_ino;
+		append_write("/out_put.txt", ">>>>>-------------------<> "); // 这个值应该等于子的 parent。
+		append_write("/out_put.txt", int2str(inode->ino));
+		append_write("/out_put.txt", "\n");
 		inode->dev = e->attr.st_dev;
 
 		pthread_mutex_lock(&lo->mutex);
@@ -365,6 +400,15 @@ static int lo_do_lookup(fuse_req_t req, fuse_ino_t parent, const char *name,
 		inode->next = next;
 		inode->prev = prev;
 		prev->next = inode;
+		append_write("/out_put.txt", "    inode->prev->ino: ");
+		append_write("/out_put.txt", int2str(inode->prev->ino % 1000000000));
+		append_write("/out_put.txt", "\n    inode->next->ino: ");
+		append_write("/out_put.txt", int2str(inode->next->ino % 1000000000));
+		append_write("/out_put.txt", "\n    lo->root.next->ino: ");
+		append_write("/out_put.txt", int2str(lo->root.next->ino % 1000000000));
+		append_write("/out_put.txt", "\n    root->ino: ");
+		append_write("/out_put.txt", int2str(lo->root.ino % 1000000000));
+		append_write("/out_put.txt", "\n");
 		pthread_mutex_unlock(&lo->mutex);
 	}
 	e->ino = (uintptr_t)inode;
@@ -384,14 +428,11 @@ out_err:
 
 static void lo_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
 {
-	append_write("/out_put.txt", "============= parent: ============\n");
-	int tmp = parent % 1000000000;
-	append_write("out_put.txt", int2str(tmp));
-	append_write("/out_put.txt", "\n");
-	append_write("/out_put.txt", "---------> ");
+	append_write("/out_put.txt", "@@@@@@@@@====> ");
 	append_write("/out_put.txt", name);
+	append_write("/out_put.txt", ", parent ino = ");
+	append_write("/out_put.txt", int2str(parent & 1000000000));
 	append_write("/out_put.txt", "\n");
-	append_write("/out_put.txt", "============================\n");
 
 	struct fuse_entry_param e;
 	int err;
@@ -907,9 +948,13 @@ static void lo_fsync(fuse_req_t req, fuse_ino_t ino, int datasync,
 	fuse_reply_err(req, res == -1 ? errno : 0);
 }
 
-static void lo_read(fuse_req_t req, fuse_ino_t ino, size_t size,
-					off_t offset, struct fuse_file_info *fi)
+static void lo_read(fuse_req_t req,
+					fuse_ino_t ino,
+					size_t size,			   // 读大小，自动填充。
+					off_t offset,			   // 读偏移，自动填充。
+					struct fuse_file_info *fi) // fi->fh 在 open 中赋值了 fd。
 {
+	// 具体先不管，反正是个 buffer。
 	struct fuse_bufvec buf = FUSE_BUFVEC_INIT(size);
 
 	if (lo_debug(req))
