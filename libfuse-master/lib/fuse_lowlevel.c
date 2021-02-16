@@ -263,8 +263,12 @@ int fuse_reply_iov(fuse_req_t req, const struct iovec *iov, int count)
 
 /* `buf` is allowed to be empty so that the proper size may be
    allocated by the caller */
-size_t fuse_add_direntry(fuse_req_t req, char *buf, size_t bufsize,
-			 const char *name, const struct stat *stbuf, off_t off)
+size_t fuse_add_direntry(fuse_req_t req,
+						 char *buf, // <--
+						 size_t bufsize,
+						 const char *name, 
+						 const struct stat *stbuf,
+						 off_t off)
 {
 	(void)req;
 	size_t namelen;
@@ -353,9 +357,11 @@ static void fill_entry(struct fuse_entry_out *arg,
 
 /* `buf` is allowed to be empty so that the proper size may be
    allocated by the caller */
-size_t fuse_add_direntry_plus(fuse_req_t req, char *buf, size_t bufsize,
-			      const char *name,
-			      const struct fuse_entry_param *e, off_t off)
+size_t fuse_add_direntry_plus(fuse_req_t req,
+							  char *buf, size_t bufsize,
+							  const char *name,
+							  const struct fuse_entry_param *e,
+							  off_t off)
 {
 	(void)req;
 	size_t namelen;
