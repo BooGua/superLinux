@@ -278,8 +278,9 @@ static int fuse_bufvec_advance(struct fuse_bufvec *bufv, size_t len)
 	return 1;
 }
 
-ssize_t fuse_buf_copy(struct fuse_bufvec *dstv, struct fuse_bufvec *srcv,
-		      enum fuse_buf_copy_flags flags)
+ssize_t fuse_buf_copy(struct fuse_bufvec *dstv,
+					  struct fuse_bufvec *srcv,
+					  enum fuse_buf_copy_flags flags)
 {
 	size_t copied = 0;
 

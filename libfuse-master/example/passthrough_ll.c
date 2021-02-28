@@ -418,9 +418,6 @@ out_err:
 static void lo_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
 {
 	append_func(__func__);
-	append_write("     -> name: ");
-	append_write(name);
-	append_write("\n");
 	struct fuse_entry_param e;
 	int err;
 
@@ -448,11 +445,6 @@ static void lo_mknod_symlink(fuse_req_t req,
 	struct lo_inode *dir = lo_inode(req, parent);
 	struct fuse_entry_param e;
 
-	// 以 dir->fd 为相对路径的初始参考位置，打开 name。
-	// res 是返回的新 fd。
-	// char my_print[100];
-	// sprintf(my_print, "----------------> name=%s, link=%s\n", name, link);
-	// append_write(my_print);
 	res = mknod_wrapper(dir->fd, name, link, mode, rdev);
 
 	saverr = errno;
@@ -544,7 +536,6 @@ out_err:
 
 static void lo_rmdir(fuse_req_t req, fuse_ino_t parent, const char *name)
 {
-	// append_write("----------------> ");
 	append_func(__func__);
 	int res;
 
@@ -553,8 +544,11 @@ static void lo_rmdir(fuse_req_t req, fuse_ino_t parent, const char *name)
 	fuse_reply_err(req, res == -1 ? errno : 0);
 }
 
-static void lo_rename(fuse_req_t req, fuse_ino_t parent, const char *name,
-					  fuse_ino_t newparent, const char *newname,
+static void lo_rename(fuse_req_t req,
+					  fuse_ino_t parent,
+					  const char *name,
+					  fuse_ino_t newparent,
+					  const char *newname,
 					  unsigned int flags)
 {
 	append_func(__func__);
@@ -565,7 +559,7 @@ static void lo_rename(fuse_req_t req, fuse_ino_t parent, const char *name,
 		fuse_reply_err(req, EINVAL);
 		return;
 	}
-
+	// 直接调用了系统方法。如果是 raptorfs，则需要自己改很多。
 	res = renameat(lo_fd(req, parent), name,
 				   lo_fd(req, newparent), newname);
 
@@ -716,7 +710,7 @@ out_err:
 		free(d);
 	}
 	fuse_reply_err(req, error);
-}j
+}
 
 static int is_dot_or_dotdot(const char *name)
 {
@@ -731,8 +725,6 @@ static void lo_do_readdir(fuse_req_t req,
 						  struct fuse_file_info *fi,
 						  int plus)
 {
-	append_write("LO_DO_READDIR SIZE: ");
-	append_uint64(size);
 	// struct lo_dirp{ DIR *dp; struct dirent *entry; off_t offset; };
 	struct lo_dirp *d = lo_dirp(fi);
 	char *buf;
@@ -772,7 +764,7 @@ static void lo_do_readdir(fuse_req_t req,
 				if (errno)
 				{ // Error
 					err = errno;
-k					goto error;
+					goto error;
 				}
 				else
 				{ // End of stream
@@ -783,16 +775,11 @@ k					goto error;
 		nextoff = d->entry->d_off;
 		name = d->entry->d_name;
 		fuse_ino_t entry_ino = 0;
-		append_write("************************************************ ");
-		append_uint64(plus);
 		if (plus) // readdirplus 调用，会读更多的文件属性。 
 		{
 			struct fuse_entry_param e; // readdirplus 会读更多的文件属性。
-			if (is_dot_or_dotdot(name)j) // . 和 .. 的情况。
+			if (is_dot_or_dotdot(name)) // . 和 .. 的情况。
 			{
-				append_write(" =====================> dot dotdot    ");
-				append_write(name);
-				append_write("\n");
 				e = (struct fuse_entry_param){
 					.attr.st_ino = d->entry->d_ino,
 					.attr.st_mode = d->entry->d_type << 12,
@@ -800,9 +787,6 @@ k					goto error;
 			}
 			else
 			{
-				append_write(" =====================> 非 dot dotdot     ");
-				append_write(name);
-				append_write("\n");
 				err = lo_do_lookup(req, ino, name, &e);
 				if (err)
 					goto error;
@@ -814,9 +798,6 @@ k					goto error;
 		}
 		else // plus == 0 的情况，readdir调用。
 		{
-			append_write(" =====================> plus == 0     ");
-			append_write(name);
-			append_write("\n");
 			struct stat st = {
 				.st_ino = d->entry->d_ino,
 				.st_mode = d->entry->d_type << 12, // 不明白这句话。
@@ -828,22 +809,11 @@ k					goto error;
 						   // 这里就会先退出，把当前 entry_ino forget 掉，然后再次调用 readdir 或 readdirplus，
 						   // 再从当前位置开始。
 		{
-			append_write("entsize = ");
-			append_uint64(entsize);
-			append_write("rem = ");
-			append_uint64(rem);
-			append_write(" =====================> 到了我就可以结束了。\n");
 			if (entry_ino != 0)
 				lo_forget_one(req, entry_ino, 1);
 			break;
 		}
-		append_write("entsize = ");
-		append_uint64(entsize);
-		append_write("rem = ");
-		append_uint64(rem);
 		p += entsize; // 向后走一个 entsize 长度。
-		append_write("----------------> p= ");
-		append_uint64(p);
 		rem -= entsize;
 
 		d->entry = NULL; // 目录的一个文件内容读完，此时清空。
@@ -870,8 +840,6 @@ static void lo_readdir(fuse_req_t req,
 					   struct fuse_file_info *fi)
 {
 	append_func(__func__);
-	// append_write("==========================> ino: ");
-	// append_uint64(ino);
 	lo_do_readdir(req, ino, size, offset, fi, 0);
 }
 
@@ -1033,12 +1001,17 @@ static void lo_read(fuse_req_t req,
 	fuse_reply_data(req, &buf, FUSE_BUF_SPLICE_MOVE);
 }
 
-static void lo_write_buf(fuse_req_t req, fuse_ino_t ino,
-						 struct fuse_bufvec *in_buf, off_t off,
+static void lo_write_buf(fuse_req_t req, 
+						 fuse_ino_t ino,
+						 struct fuse_bufvec *in_buf, 
+						 off_t off,
 						 struct fuse_file_info *fi)
 {
 	append_func(__func__);
-	(void)ino;
+	// append_write((char*)in_buf->buf->mem); // 输入的内容。例如 echo "hello qhj" > zfile，
+										   // 这里将打印 "hello qhj"。
+										   // 所以现在的目标是将它存到目标文件中。
+
 	ssize_t res;
 	struct fuse_bufvec out_buf = FUSE_BUFVEC_INIT(fuse_buf_size(in_buf));
 
@@ -1070,9 +1043,14 @@ static void lo_statfs(fuse_req_t req, fuse_ino_t ino)
 		fuse_reply_statfs(req, &stbuf);
 }
 
-static void lo_fallocate(fuse_req_t req, fuse_ino_t ino, int mode,
-						 off_t offset, off_t length, struct fuse_file_info *fi)
+static void lo_fallocate(fuse_req_t req,
+						 fuse_ino_t ino,
+						 int mode,
+						 off_t offset,
+						 off_t length,
+						 struct fuse_file_info *fi)
 {
+	append_write("-------------------> ");
 	append_func(__func__);
 	int err = EOPNOTSUPP;
 	(void)ino;
